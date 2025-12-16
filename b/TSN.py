@@ -1,16 +1,55 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import librosa
 
 
-class MockTSN(nn.Module):
-    def __init__(self):
+class RealTSN(nn.Module):
+    def __init__(self, context_window=9):
         super().__init__()
         
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=(3, 3), padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.pool1 = nn.MaxPool2d((2, 2))
+        
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=(3, 3), padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.pool2 = nn.MaxPool2d((2, 2))
+        
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=(3, 3), padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.pool3 = nn.MaxPool2d((2, 2))
+        
+        self.fc_input_size = 128 * 24 * 1
+        
+        self.fc1 = nn.Linear(self.fc_input_size, 512)
+        self.dropout = nn.Dropout(0.5)
+        
+        self.string_outputs = nn.ModuleList([
+            nn.Linear(512, 25) for _ in range(6)
+        ])
+    
     def forward(self, x):
-        batch_size = x.shape[0]
-        return torch.randint(0, 25, (batch_size, 6), dtype=torch.float32)
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.pool1(x)
+        
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.pool2(x)
+        
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = self.pool3(x)
+        
+        x = x.view(x.size(0), -1)
+        
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        
+        outputs = []
+        for string_classifier in self.string_outputs:
+            outputs.append(string_classifier(x))
+        
+        return torch.stack(outputs, dim=1)
 
 
 class TSN:
@@ -26,11 +65,13 @@ class TSN:
         self.bins_per_octave = 24
     
     def build_model(self):
-        self.model = MockTSN().to(self.device)
+        self.model = RealTSN(context_window=9).to(self.device)
         self.model.eval()
     
     def load_weights(self, weights_path):
-        pass
+        checkpoint = torch.load(weights_path, map_location=self.device)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model.eval()
     
     def preprocess_audio(self, audio_path):
         y, sr = librosa.load(audio_path, sr=self.sr)
@@ -58,10 +99,12 @@ class TSN:
         with torch.no_grad():
             for i in range(len(audio_repr)):
                 window = padded[i:i + context_window]
-                x = np.expand_dims(np.expand_dims(np.swapaxes(window, 0, 1), -1), 0)
+                x = window.T
+                x = x[np.newaxis, np.newaxis, :, :]
                 x_tensor = torch.from_numpy(x).float().to(self.device)
                 
-                pred = self.model(x_tensor)
+                logits = self.model(x_tensor)
+                pred = torch.argmax(logits, dim=-1)
                 predictions.append(pred.cpu().numpy()[0])
         
         return np.array(predictions, dtype=int)
