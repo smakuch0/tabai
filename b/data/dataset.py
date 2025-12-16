@@ -101,37 +101,66 @@ class GuitarSetDataset(Dataset):
         
     def _build_frame_index(self):
         index = []
+        print(f"Building frame index and pre-caching labels for {len(self.file_list)} files...")
+        
         for file_idx, audio_path in enumerate(self.file_list):
             spec = self._load_or_compute_spectrogram(audio_path)
             num_frames = len(spec)
             
+            jams_name = audio_path.stem
+            for suffix in ['_hex_cln', '_hex_original', '_hex', '_mix', '_mic', '_original', '_debleeded']:
+                jams_name = jams_name.replace(suffix, '')
+            jams_path = self.annotation_dir / f"{jams_name}.jams"
+            
+            self._load_or_compute_labels(jams_path, num_frames)
+            
             for frame_idx in range(num_frames):
                 index.append((file_idx, frame_idx))
+            
+            if (file_idx + 1) % 10 == 0:
+                print(f"Processed {file_idx + 1}/{len(self.file_list)} files")
         
         return index
+    
+    def _atomic_save(self, data, cache_path):
+        import uuid
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = cache_path.parent / f".tmp_{uuid.uuid4().hex}.npy"
+        np.save(temp_path, data)
+        temp_path.replace(cache_path)
     
     def _load_or_compute_spectrogram(self, audio_path):
         cache_path = self.cache_dir / f"{audio_path.stem}_cqt.npy"
         
         if cache_path.exists():
-            return np.load(cache_path)
+            try:
+                return np.load(cache_path)
+            except Exception as e:
+                print(f"Warning: Corrupted cache {cache_path}, regenerating... (Error: {e})")
+                if cache_path.exists():
+                    cache_path.unlink()
         
         spec = preprocess_audio_to_cqt(audio_path, sr=self.sr, hop_length=self.hop_length,
                                        n_bins=self.n_bins, bins_per_octave=self.bins_per_octave)
         
-        np.save(cache_path, spec)
+        self._atomic_save(spec, cache_path)
         return spec
     
     def _load_or_compute_labels(self, jams_path, num_frames):
         cache_path = self.cache_dir / f"{jams_path.stem}_labels.npy"
         
         if cache_path.exists():
-            return np.load(cache_path)
+            try:
+                return np.load(cache_path)
+            except Exception as e:
+                print(f"Warning: Corrupted cache {cache_path}, regenerating... (Error: {e})")
+                if cache_path.exists():
+                    cache_path.unlink()
         
         notes = load_jams_annotation(jams_path)
         labels = generate_frame_labels(notes, num_frames, self.hop_length, self.sr)
         
-        np.save(cache_path, labels)
+        self._atomic_save(labels, cache_path)
         return labels
     
     def __len__(self):
