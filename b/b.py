@@ -1,12 +1,9 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import numpy as np
-import librosa
 import tempfile
 import os
 import logging
-from pathlib import Path
 
 from TSN import TSN
 
@@ -64,11 +61,7 @@ async def generate_tab(file: UploadFile = File(...)):
             tmp.write(content)
             tmp_path = tmp.name
         
-        y, sr = librosa.load(tmp_path, sr=22050)
-        y = librosa.util.normalize(y)
-        
-        cqt = np.abs(librosa.cqt(y, sr=sr, hop_length=512, n_bins=192, bins_per_octave=24))
-        audio_repr = np.swapaxes(cqt, 0, 1)
+        audio_repr = model.preprocess_audio(tmp_path)
         
         predictions = model.predict(audio_repr, context_window=9)
         
