@@ -48,6 +48,11 @@ st.markdown("""
         margin: 1rem 0;
         color: white;
     }
+    .stTextArea textarea {
+        white-space: pre !important;
+        overflow-x: auto !important;
+        font-family: 'Courier New', monospace !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
