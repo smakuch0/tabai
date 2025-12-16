@@ -1,2 +1,2 @@
 . venv/bin/activate
-python3 b/b.py
+python3 -m b.b

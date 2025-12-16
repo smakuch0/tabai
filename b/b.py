@@ -5,7 +5,7 @@ import tempfile
 import os
 import logging
 
-from TSN import TSN
+from b.TSN import TSN
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,6 +30,14 @@ async def startup():
     
     model = TSN()
     model.build_model()
+    
+    checkpoint_path = os.getenv('MODEL_CHECKPOINT', 'b/checkpoints/best.pth')
+    if os.path.exists(checkpoint_path):
+        logger.info(f"Loading weights from {checkpoint_path}")
+        model.load_weights(checkpoint_path)
+        logger.info("Weights loaded")
+    else:
+        logger.warning(f"Checkpoint not found: {checkpoint_path}, using untrained model")
     
     logger.info("TSN ready")
 
