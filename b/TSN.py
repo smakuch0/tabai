@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import librosa
+
+from b.utils import preprocess_audio_to_cqt
 
 
 class RealTSN(nn.Module):
@@ -59,10 +60,6 @@ class TSN:
         self.num_classes = 25
         self.model = None
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.sr = 22050
-        self.hop_length = 512
-        self.n_bins = 192
-        self.bins_per_octave = 24
     
     def build_model(self):
         self.model = RealTSN(context_window=9).to(self.device)
@@ -74,19 +71,7 @@ class TSN:
         self.model.eval()
     
     def preprocess_audio(self, audio_path):
-        y, sr = librosa.load(audio_path, sr=self.sr)
-        y = librosa.util.normalize(y)
-        
-        spec = np.abs(librosa.cqt(
-            y, 
-            sr=sr, 
-            hop_length=self.hop_length,
-            n_bins=self.n_bins,
-            bins_per_octave=self.bins_per_octave
-        ))
-        
-        spec = np.log(spec + 1e-10)
-        return np.swapaxes(spec, 0, 1)
+        return preprocess_audio_to_cqt(audio_path)
     
     def predict(self, audio_repr, context_window=9):
         if self.model is None:
